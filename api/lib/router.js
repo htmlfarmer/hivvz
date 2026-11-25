@@ -703,7 +703,18 @@ class AIRouter {
                                 const latency = Date.now() - startTime;
                                 // < 400ms = IDLE (Spare time available!)
                                 // > 1000ms = BUSY (Owner is using it, protect that time!)
-                                this.spareTimeTracker.set(ep.url, { idle: latency < 400, latency: latency, ts: Date.now() });
+                                //
+                                // A DELEGATED endpoint is not a local model: it forwards
+                                // the request to remote compute (a KwaaiNet node resolves
+                                // a block chain through the libp2p hivemind DHT, so one
+                                // answer crosses several machines). Its latency measures
+                                // that chain, not local contention on this box, so the
+                                // 400ms idle threshold would read every healthy
+                                // distributed endpoint as "the owner is using it" and
+                                // skip it forever. Delegated endpoints get their own
+                                // threshold; a direct local model keeps the strict one.
+                                const idleThreshold = ep.delegated ? 3000 : 400;
+                                this.spareTimeTracker.set(ep.url, { idle: latency < idleThreshold, latency: latency, ts: Date.now() });
                             } else {
                                 this.spareTimeTracker.delete(ep.url);
                             }
@@ -739,10 +750,25 @@ class AIRouter {
         const envEndpoints = process.env.HIVV_LOCAL_ENDPOINTS || process.env.LOCAL_AI_ENDPOINTS || '';
         if (envEndpoints) {
             for (const url of envEndpoints.split(',').map(s => s.trim()).filter(Boolean)) {
-                const probeUrl = url.includes('/chat/completions') ? url.replace('/chat/completions', '/models') : url;
+                const probeUrl = url.split('?')[0].includes('/chat/completions')
+                    ? url.split('?')[0].replace('/chat/completions', '/models')
+                    : url.split('?')[0];
                 const existing = discoveryEndpoints.find(e => e.url === url || e.probeUrl === probeUrl);
                 if (!existing) {
-                    discoveryEndpoints.push({ probeUrl, url: url.includes('/models') ? url.replace('/models', '/chat/completions') : url, name: `remote-${new URL(url).hostname}`, provider: 'ollama' });
+                    // A '?delegated=1' suffix marks an endpoint that forwards to
+                    // remote compute rather than serving a local model. It rides
+                    // on the URL because HIVV_LOCAL_ENDPOINTS is a plain comma
+                    // list of URLs and we do not want to invent a second
+                    // configuration file for one flag.
+                    const delegated = new URL(url).searchParams.get('delegated') === '1';
+                    const clean = url.split('?')[0];
+                    discoveryEndpoints.push({
+                        probeUrl,
+                        url: clean.includes('/models') ? clean.replace('/models', '/chat/completions') : clean,
+                        name: `remote-${new URL(clean).hostname}`,
+                        provider: 'ollama',
+                        delegated
+                    });
                 }
             }
         }

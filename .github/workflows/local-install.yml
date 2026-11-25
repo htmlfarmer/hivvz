@@ -103,7 +103,12 @@ jobs:
         # interpreter — without this step `python -m pytest` dies with
         # "No module named pytest" before running a single test (it did,
         # for 6 straight runs on 2026-11-17).
-        run: python -m pip install --quiet pytest
+        # pyyaml too: tests/test_bridge.py and tests/test_telemetry_tasks_a2a.py
+        # import it, and setup-python gives a clean interpreter — so without
+        # this the run dies at COLLECTION with "No module named 'yaml'"
+        # before a single assertion is reached (it did, on every push to
+        # main, for 3 straight runs on 2026-11-25).
+        run: python -m pip install --quiet pytest pyyaml
       - name: Node tests
         working-directory: api
         run: node --test

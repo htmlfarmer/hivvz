@@ -10,7 +10,24 @@ module.exports = {
       PORT: 3011,
       // Local llama.cpp (gemma-4-E2B) on loopback:8090 — 8080 is Apache's.
       // Router probes /v1/models then calls /v1/chat/completions (OpenAI format).
-      HIVV_LOCAL_ENDPOINTS: 'http://localhost:8090/v1/models',
+      //
+      // Second door: our own KwaaiNet node's 'shard api' on loopback:18090.
+      // It resolves a covering block chain through the libp2p hivemind DHT per
+      // request, so the answer may come from any node serving the model — the
+      // compute comes from the network, not from this box. Run by the
+      // kwaainet-shard-api systemd user unit.
+      //
+      // '?delegated=1' marks it as an endpoint that forwards to remote compute
+      // rather than serving a local model, so the spare-time guard measures it
+      // against a longer idle threshold (see router.js). Without it, the
+      // guard read normal distributed-inference latency as 'the owner is
+      // using it' and skipped the endpoint on every request.
+      //
+      // Both are LOCAL providers: they sit in the tryLocalAI path, which is
+      // reached BEFORE any cloud provider, and they are excluded from the
+      // cloud failover chain (router.js filters !isLocalProvider). Nothing
+      // here can carry traffic to a cloud provider by accident.
+      HIVV_LOCAL_ENDPOINTS: 'http://localhost:8090/v1/models,http://localhost:18090/v1/models?delegated=1',
       // LYRz settlement: honey earned by a node also becomes a portable LYRz
       // balance that follows the node across the ecosystem.
       LYRZ_API_URL: 'https://lyrz.org/api/v1',
